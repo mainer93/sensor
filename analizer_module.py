@@ -2,6 +2,10 @@ import logging
 import time
 from capture_module import PacketProcessor
 from datetime import datetime
+import yara
+
+# Сборка YARA правил из файла
+rules = yara.compile('network_rules.yar')
 
 
 class HTTPAnalyzer:
@@ -20,6 +24,7 @@ class IPAnalyzer:
     @staticmethod
     def analyze(packet):
         # Добавлены правила для анализа IP пакетов
+        print("\n")
         print("Объединенные фрагментированные пакеты: ")
         print(f"Пакет: №{packet.number}")
         print(f"Время: {datetime.fromtimestamp(float(packet.sniff_timestamp)).strftime('%Y-%m-%d %H:%M:%S')}")
@@ -83,7 +88,37 @@ class Analyzer:
 
     def process_packet(self, packet):
         try:
-            self.processor.process_packet(packet)
+            if 'ip' in packet:
+                ip_traffic = f"IP источника: {packet.ip.src}, IP получателя: {packet.ip.dst}," \
+                             f" Протокол сетевого уровня: IPv{packet.ip.version}"
+                for rule in rules.match(data=ip_traffic):
+                    print(f"Совпадение IP правил: {rule}")
+            else:
+                print(f"Несовпадение IP правил")
+
+            if 'tcp' in packet:
+                tcp_traffic = f"Протокол транспортного уровня: TCP, Исходный порт: {packet.tcp.srcport}, " \
+                              f"Порт назначения: {packet.tcp.dstport}"
+                for rule in rules.match(data=tcp_traffic):
+                    print(f"Совпадение TCP правил: {rule}")
+            else:
+                print(f"Несовпадение TCP правил")
+
+            if 'udp' in packet:
+                udp_traffic = f"Протокол транспортного уровня: TCP, Исходный порт: {packet.udp.srcport}, " \
+                              f"Порт назначения: {packet.udp.dstport}"
+                for rule in rules.match(data=udp_traffic):
+                    print(f"Совпадение UDP правил: {rule}")
+            else:
+                print(f"Несовпадение UDP правил")
+
+            if 'eth' in packet and packet.eth.type == '0x0806':
+                arp_traffic = f"ARP: src_mac={packet.arp.src_hw_mac}, ARP: src_proto= {packet.arp.src_proto_ipv4}, " \
+                              f"ARP: dst_mac={packet.arp.dst_hw_mac}, ARP: dst_proto={packet.arp.dst_proto_ipv4}"
+                for rule in rules.match(data=arp_traffic):
+                    print(f"Совпадение ARP правил: {rule}")
+            else:
+                print(f"Несовпадение ARP правил")
 
             if 'HTTP' in packet:
                 http_analyzer = HTTPAnalyzer()
@@ -122,7 +157,7 @@ class MainAnalyzer:
             analyzer = Analyzer(self.interface)
             for packet in analyzer.processor.capture.sniff_continuously(packet_count=0):
                 analyzer.process_packet(packet)
-                time.sleep(1)
+                time.sleep(0)
 
         except Exception as e:
             print(f"Ошибка захвата или обработки пакета: {str(e)}")
